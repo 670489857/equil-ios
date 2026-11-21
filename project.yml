@@ -1,0 +1,30 @@
+name: EquilProbe
+options:
+  bundleIdPrefix: app.equil
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+targets:
+  EquilProbe:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Equil 探测
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSBluetoothAlwaysUsageDescription: 连接微泰 Equil 贴泵需要蓝牙权限，用于读取贴泵广播与状态帧。
+        NSBluetoothPeripheralUsageDescription: 连接微泰 Equil 贴泵需要蓝牙权限。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.equil.probe
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO

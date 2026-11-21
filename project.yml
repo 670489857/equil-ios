@@ -14,8 +14,8 @@ targets:
       path: Sources/Info.plist
       properties:
         CFBundleDisplayName: Equil 独立版
-        CFBundleShortVersionString: "0.2.0"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "0.2.1"
+        CFBundleVersion: "4"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

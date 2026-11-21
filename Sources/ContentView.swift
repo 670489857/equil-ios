@@ -72,7 +72,7 @@ struct ContentView: View {
             HStack {
                 Text("Equil 独立版")
                     .font(.system(size: 17, weight: .semibold))
-                Text("v0.2.0")
+                Text("v0.2.1")
                     .font(.system(size: 11))
                     .foregroundColor(.gray)
                 Spacer()

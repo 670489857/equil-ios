@@ -1,36 +1,17 @@
-# Equil 探测版（iOS）
+# Equil 独立版（iOS）
 
-微泰 Equil 贴泵的 iOS 侧工程。当前为 **0.1 探测版**：只做 BLE 扫描、连接、GATT 枚举和帧抓取，**还不能控泵**。
+微泰 Equil 贴泵的独立 iOS 客户端，不依赖 AAPS。Swift 重写，本仓库**不含任何厂商二进制代码**，可公开。
 
-## 为什么不能直接搬 Android 版
+## 版本
+- 0.2.0：连接 + 控制台（查询/暂停/恢复/停止/大剂量/临时百分比/退药/排气/绑定）+ 帧调试台 + 换片向导 + 贴片倒计时。
 
-- 原 SDK `com.microtechmd.library` 是 Android Java，依赖 `android.*`
-- 协议栈在 `libjni_interface.so` 里，是 Android ELF（aarch64/armv7），iOS 无法加载
-- 所以 iOS 必须用 Swift 重写：BLE(UUID F000/FFE1) → 帧封装 → 链路状态机 → 业务命令
+## 协议层
+- 帧：`SOF SOF + 转义(body) + SOF SOF`，默认 SOF=0x7E、ESC=0x7D（可在调试页改）。
+- body：`seq + addr + srcPort + dstPort + mode + param(2B) + len + data + crc(2B)`，CRC-16 反射（多项式 0xA001，初值 0xFFFF），`len = data.count + 12`。
+- 业务层严格复刻 `com.microtechmd.library.presenter.*`：端口 4↔4 的 param 0=模式、2=基础率、3=大剂量、4=临时率、5=设置、6=退药、7=排气；mode 1=set、2=get；数值为 int32 小端。
 
-## 已逆向到的协议结构（继续做 0.2 的依据）
-
-`LibFrame_Pack` 反汇编结果是典型的转义帧：
-
-```
-[SOF][payload 每字节: 若等于 SOF 或 ESC 则先输出 ESC][ESC][ESC]
-```
-
-原生层其它符号：`DevComm_Send/Query/Receive/Link/Tick/Unlink`、`LibChecksum_GetChecksumPartial16Bit`、`LibChecksum_GetChecksumPartial8Bit`、`DrvUART_*`。说明是「校验 + 序列号 + 重传」的链路层，业务消息体就是 `EntityMessage`（源/目标地址、端口、操作码、参数、数据）。
+> 帧层的 SOF/ESC、CRC 落位、序号语义来自对 `libjni_interface.so` 的静态逆向。若首次下发无回帧，用「调试」页把 AAPS 日志中的 `Write frame, data: ...` 原样发送比对即可定位差异，无需重新编译。
 
 ## 构建
-
-公开仓库用 GitHub macOS runner 构建（私有仓库在免费账号没有 macOS 配额）：
-
-```
-xcodegen generate
-xcodebuild -project EquilProbe.xcodeproj -target EquilProbe -configuration Release -sdk iphoneos CODE_SIGNING_ALLOWED=NO build
-```
-
-产物 `EquilProbe-unsigned.ipa` 未签名，需要 AltStore / SideStore / 自己的开发者证书签名后才能装。
-
-## 路线
-
-- 0.1（当前）：扫描 + 连接 + 特征/帧抓取，用来在你的泵上验证 UUID、通知特征和真实帧格式
-- 0.2：Swift 实现解帧/组帧 + 查询设备、绑定、模式、大剂量、临时基础率
-- 0.3：前台保持、告警、贴片倒计时（与 Android 版对齐）
+GitHub Actions（macos-latest）自动产出未签名 IPA；也可本地 `xcodegen generate && xcodebuild ...`。
+未签名 IPA 需自签（Sideloadly/AltStore/开发者证书）后才能装到 iPhone。

@@ -29,11 +29,19 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var characteristics: [CBCharacteristic] = []
     @Published var serviceNames: [String] = []
     @Published var pumpServiceFound = false
+    @Published var writableReady = false
+    @Published var pumpMode: Int? = nil
+    @Published var txCount = 0
+    @Published var rxCount = 0
 
     private var central: CBCentralManager!
     private var found: [UUID: Discovered] = [:]
     private var timeoutTask: DispatchWorkItem?
     private var pendingDevice: Discovered?
+    private var writeChar: CBCharacteristic?
+    private var rxBuffer: [UInt8] = []
+
+    var bindAddress: UInt8 = 0
 
     override init() {
         super.init()
@@ -42,10 +50,10 @@ final class BLEManager: NSObject, ObservableObject {
 
     func log(_ text: String) {
         let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
+        formatter.dateFormat = "HH:mm:ss.SSS"
         let line = "\(formatter.string(from: Date()))  \(text)"
         logs.insert(line, at: 0)
-        if logs.count > 300 { logs.removeLast(logs.count - 300) }
+        if logs.count > 400 { logs.removeLast(logs.count - 400) }
     }
 
     func startScan() {
@@ -78,12 +86,12 @@ final class BLEManager: NSObject, ObservableObject {
         statusText = "正在连接 \(item.name)…"
         item.peripheral.delegate = self
         central.connect(item.peripheral, options: nil)
-        log("连接 \(item.name) \(item.peripheral.identifier.uuidString)")
+        log("连接 \(item.name)")
 
         timeoutTask?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self = self, self.connected == nil else { return }
-            self.errorText = "连接超时（8 秒）。常见原因：贴泵正被另一台手机（AAPS/原厂 App）连着，或泵已休眠。"
+            self.errorText = "连接超时（8 秒）。贴泵可能正被另一台手机（AAPS/原厂 App）连着，或已休眠。"
             self.statusText = "连接失败"
             self.log("连接超时")
             if let p = self.pendingDevice?.peripheral { self.central.cancelPeripheralConnection(p) }
@@ -100,13 +108,48 @@ final class BLEManager: NSObject, ObservableObject {
         timeoutTask?.cancel()
         if let p = connected { central.cancelPeripheralConnection(p) }
         connected = nil
+        writeChar = nil
+        writableReady = false
         statusText = "未连接"
         serviceNames = []
         characteristics = []
         pumpServiceFound = false
+        pumpMode = nil
+        rxBuffer = []
     }
 
     func clearError() { errorText = nil }
+
+    // MARK: - 发送
+
+    @discardableResult
+    func send(_ msg: EquilMessage) -> Bool {
+        let frame = EquilProtocol.shared.frame(for: msg)
+        log("TX msg port \(msg.srcPort)→\(msg.dstPort) mode \(msg.mode.rawValue) param \(msg.parameter)")
+        return sendRaw(bytes: frame)
+    }
+
+    @discardableResult
+    func sendRaw(hex: String) -> Bool {
+        let cleaned = hex.uppercased().filter { "0123456789ABCDEF ".contains($0) }
+        let parts = cleaned.split(separator: " ").compactMap { UInt8($0, radix: 16) }
+        guard !parts.isEmpty else { log("HEX 格式不对"); return false }
+        return sendRaw(bytes: parts)
+    }
+
+    @discardableResult
+    private func sendRaw(bytes: [UInt8]) -> Bool {
+        guard let peripheral = connected, let ch = writeChar else {
+            errorText = "还没连上可写特征（F001/FFE1）"
+            return false
+        }
+        let data = Data(bytes)
+        let type: CBCharacteristicWriteType = ch.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+        peripheral.writeValue(data, for: ch, type: type)
+        txCount += 1
+        log("TX \(bytes.count)B: \(bytes.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        return true
+    }
 }
 
 extension BLEManager: CBCentralManagerDelegate {
@@ -153,16 +196,19 @@ extension BLEManager: CBCentralManagerDelegate {
         timeoutTask?.cancel()
         connected = nil
         statusText = "连接失败"
-        errorText = "连接失败：\(error?.localizedDescription ?? "未知原因")。若贴泵正被其他手机占用，请先断开那台。"
+        errorText = "连接失败：\(error?.localizedDescription ?? "未知原因")。贴泵若被其他手机占用，请先断开那台。"
         log("连接失败 \(error?.localizedDescription ?? "-")")
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         timeoutTask?.cancel()
         connected = nil
+        writeChar = nil
+        writableReady = false
         serviceNames = []
         characteristics = []
         pumpServiceFound = false
+        pumpMode = nil
         statusText = "已断开"
         if let error = error {
             errorText = "连接中断：\(error.localizedDescription)"
@@ -194,13 +240,25 @@ extension BLEManager: CBPeripheralDelegate {
                     didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
         for ch in service.characteristics ?? [] {
-            log("特征 \(ch.uuid.uuidString) 属性 \(ch.properties.rawValue)")
+            let p = ch.properties
+            log("特征 \(ch.uuid.uuidString) 属性 \(p.rawValue)\(p.contains(.write) ? " 可写" : "")\(p.contains(.writeWithoutResponse) ? " 免响应" : "")")
             if !characteristics.contains(where: { $0.uuid == ch.uuid }) {
                 characteristics.append(ch)
             }
-            if ch.properties.contains(.notify) || ch.properties.contains(.indicate) {
+            let writable = p.contains(.write) || p.contains(.writeWithoutResponse)
+            if writable, writeChar == nil, ch.uuid.uuidString.hasPrefix("0000F001") {
+                writeChar = ch
+            } else if writable, writeChar == nil {
+                writeChar = ch
+            }
+            if p.contains(.notify) || p.contains(.indicate) {
                 peripheral.setNotifyValue(true, for: ch)
             }
+        }
+        writableReady = writeChar != nil
+        if let ch = writeChar {
+            statusText = "就绪，可下发命令"
+            log("写入特征 \(ch.uuid.uuidString)")
         }
     }
 
@@ -208,10 +266,22 @@ extension BLEManager: CBPeripheralDelegate {
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
         guard let data = characteristic.value else { return }
+        rxCount += 1
         let hex = data.map { String(format: "%02X", $0) }.joined(separator: " ")
         lastFrameHex = hex
         frames.insert(hex, at: 0)
         if frames.count > 200 { frames.removeLast(frames.count - 200) }
-        log("收到帧 \(data.count)B: \(hex)")
+        log("RX \(data.count)B: \(hex)")
+
+        rxBuffer.append(contentsOf: [UInt8](data))
+        let bodies = EquilProtocol.shared.codec.extractFrames(from: &rxBuffer)
+        for body in bodies {
+            log("帧解析 → \(EquilProtocol.shared.describe(body))")
+            if body.count >= 12, body[2] == 4, body[3] == 4,
+               (UInt16(body[5]) | UInt16(body[6]) << 8) == 0 {
+                let value = Int(body[8]) | Int(body[9]) << 8 | Int(body[10]) << 16 | Int(body[11]) << 24
+                if value >= 0 && value <= 2 { pumpMode = value }
+            }
+        }
     }
 }

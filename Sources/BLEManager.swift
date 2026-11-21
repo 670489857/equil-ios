@@ -42,6 +42,9 @@ final class BLEManager: NSObject, ObservableObject {
     private var rxBuffer: [UInt8] = []
 
     var bindAddress: UInt8 = 0
+    @Published var autoReconnect = true
+    private var manualDisconnect = false
+    private var reconnectTask: DispatchWorkItem?
 
     override init() {
         super.init()
@@ -105,6 +108,8 @@ final class BLEManager: NSObject, ObservableObject {
     }
 
     func disconnect() {
+        manualDisconnect = true
+        reconnectTask?.cancel()
         timeoutTask?.cancel()
         if let p = connected { central.cancelPeripheralConnection(p) }
         connected = nil
@@ -185,6 +190,7 @@ extension BLEManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         timeoutTask?.cancel()
         connected = peripheral
+        manualDisconnect = false
         connectedName = peripheral.name ?? pendingDevice?.name ?? ""
         statusText = "已连接，正在发现服务…"
         errorText = nil
@@ -214,6 +220,16 @@ extension BLEManager: CBCentralManagerDelegate {
             errorText = "连接中断：\(error.localizedDescription)"
         }
         log("断开连接 \(error?.localizedDescription ?? "")")
+        if autoReconnect && !manualDisconnect, let device = pendingDevice {
+            log("5 秒后自动重连")
+            let task = DispatchWorkItem { [weak self] in
+                guard let self = self, self.connected == nil else { return }
+                self.connect(device)
+            }
+            reconnectTask?.cancel()
+            reconnectTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: task)
+        }
     }
 }
 

@@ -117,6 +117,9 @@ struct ContentView: View {
                         Button("重试连接") { ble.retry() }.font(.system(size: 12))
                     }
                 }
+                Toggle("断线自动重连（5 秒）", isOn: $ble.autoReconnect)
+                    .font(.system(size: 12))
+
                 ForEach(ble.devices) { item in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {

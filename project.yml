@@ -19,6 +19,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        UIBackgroundModes:
+          - bluetooth-central
         NSBluetoothAlwaysUsageDescription: 连接微泰 Equil 贴泵需要蓝牙权限，用于读取贴泵广播与状态帧。
         NSBluetoothPeripheralUsageDescription: 连接微泰 Equil 贴泵需要蓝牙权限。
     settings:

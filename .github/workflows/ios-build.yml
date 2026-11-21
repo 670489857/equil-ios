@@ -24,14 +24,13 @@ jobs:
             -target EquilProbe \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build
 
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/EquilProbe.app Payload/
+          cp -R build/Release-iphoneos/EquilProbe.app Payload/
           zip -qry EquilProbe-unsigned.ipa Payload
           ls -lh EquilProbe-unsigned.ipa
 

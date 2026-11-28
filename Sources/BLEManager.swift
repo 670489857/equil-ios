@@ -386,7 +386,7 @@ extension BLEManager: CBPeripheralDelegate {
         log("RX \(data.count)B: \(hex)")
 
         rxBuffer.append(contentsOf: [UInt8](data))
-        let bodies = EquilProtocol.shared.codec.extractFrames(from: &rxBuffer)
+        let bodies = EquilProtocol.shared.codec.stripFrames(&rxBuffer)
         for body in bodies {
             log("帧解析 → \(EquilProtocol.shared.describe(body))")
             handleBody(body)

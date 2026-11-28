@@ -371,8 +371,10 @@ struct ContentView: View {
                 sectionCard("换片 / 维护") {
                     Text("顺序：停止 → 退药 → 取旧片 → 装新片 → 排气 → 恢复 → 记录。")
                         .font(.system(size: 11)).foregroundColor(.gray)
-                    Button(wizardStep == 0 ? "开始换片向导（6 步）" : "下一步（\(wizardStep)/6）：\(wizardText)")
-                        .buttonStyle(.bordered)
+                    Button(wizardStep == 0 ? "开始换片向导（6 步）" : "下一步（\(min(wizardStep, 6))/6）：\(wizardText)") {
+                        nextWizard()
+                    }
+                    .buttonStyle(.bordered)
                     Button("记录已换片（重置 3 天倒计时）") {
                         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "equil_patch_at")
                     }
@@ -394,12 +396,12 @@ struct ContentView: View {
 
     private var wizardText: String {
         switch wizardStep {
-        case 1: return "已发送暂停"
-        case 2: return "已退药 3U，请取旧片"
-        case 3: return "装新片后点下一步"
-        case 4: return "将排气 2U"
-        case 5: return "已排气，将恢复运行"
-        case 6: return "已完成并记录换片"
+        case 1: return "已暂停，下一步退药 3U"
+        case 2: return "请取旧片、装新片"
+        case 3: return "装好后排气 2U"
+        case 4: return "排气完成，准备恢复"
+        case 5: return "将恢复运行并记录"
+        case 6: return "点一次记录换片"
         default: return "准备"
         }
     }
@@ -493,26 +495,30 @@ struct ContentView: View {
         case .syncTime:
             ble.send(EquilCommands.setDateTime(address: addr))
         }
-        if wizardStep > 0 && wizardStep <= 6 { advanceWizard() }
     }
 
-    private func advanceWizard() {
+    private func nextWizard() {
         let addr = ble.bindAddress
+        if wizardStep == 0 {
+            wizardStep = 1
+            ble.send(EquilCommands.setMode(address: addr, mode: 0))
+            return
+        }
         switch wizardStep {
         case 1:
-            ble.send(EquilCommands.setMode(address: addr, mode: 0))
-        case 2:
             ble.send(EquilCommands.rewind(address: addr, units: 3))
-        case 4:
+        case 3:
             ble.send(EquilCommands.prime(address: addr, units: 2))
         case 5:
             ble.send(EquilCommands.setMode(address: addr, mode: 1))
         case 6:
             UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "equil_patch_at")
+            wizardStep = 0
+            return
         default:
             break
         }
-        if wizardStep < 6 { wizardStep += 1 } else { wizardStep = 0 }
+        wizardStep = min(6, wizardStep + 1)
     }
 
     // MARK: - 组件

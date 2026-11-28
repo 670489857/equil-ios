@@ -161,7 +161,7 @@ struct OverviewView: View {
         out.append(Row(label: "胰岛素储药器", value: reservoirText,
                        level: reservoirLevel(model.reservoirUnits)))
         out.append(Row(label: "基础速率",
-                       value: model.baseBasalRate.map { String(format: "%.3f U/h", $0) } ?? "-"))
+                       value: model.currentBasalRate.map { String(format: "%.3f U/h", $0) } ?? "-"))
         out.append(Row(label: "临时基础速率", value: model.tempBasalSummary ?? "-",
                        level: model.tempBasalSummary == nil ? .unspecified : .normal))
         // 总输送量 = 起始量 − 当前余量，与 AAPS `EquilOverviewViewModel` 同口径。

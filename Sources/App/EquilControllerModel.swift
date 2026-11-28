@@ -144,6 +144,13 @@ final class EquilControllerModel: ObservableObject {
     @Published var baseBasalRate: Double?
     /// 最近一次写入/读到的 24 个整点基础率（U/h），供设置页回显。
     @Published var basalSchedule: [Double]?
+
+    /// 当前小时的基础率。有 24 段表时按当前钟点取，否则退回读到的第一个值。
+    var currentBasalRate: Double? {
+        guard let schedule = basalSchedule, schedule.count == 24 else { return baseBasalRate }
+        let hour = min(23, max(0, Calendar.current.component(.hour, from: Date())))
+        return schedule[hour]
+    }
     /// 起始储药量（U）。-1 / nil 表示未知，此时算不出总输注量。
     @Published var startInsulin: Int?
     /// 最近一次大剂量。
@@ -1946,6 +1953,7 @@ final class EquilControllerModel: ObservableObject {
             case .success:
                 if let rates = cmd.hourlyRates, !rates.isEmpty {
                     self.baseBasalRate = rates.first
+                    self.basalSchedule = rates
                     let text = rates.prefix(8).map { String(format: "%.3f", $0) }.joined(separator: " / ")
                     self.append("📈 基础率（0 时起，前 8 小时）：\(text) U/h")
                     self.statusLine = "基础率 \(String(format: "%.3f", rates[0])) U/h"
@@ -2364,7 +2372,7 @@ final class EquilControllerModel: ObservableObject {
             ble.nameFilterPrefix = nil
             ble.nameFilterContains = nil
         } else {
-            ble.nameFilterPrefix = "Equil"
+            ble.nameFilterPrefix = "eq"
             ble.nameFilterContains = nil
         }
 

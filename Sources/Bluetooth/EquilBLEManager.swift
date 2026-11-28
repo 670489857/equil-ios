@@ -205,7 +205,7 @@ extension EquilBLEManager: CBCentralManagerDelegate {
                         rssi RSSI: NSNumber) {
         let advName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? p.name
         guard let name = advName, !name.isEmpty else { return }
-        if let prefix = nameFilterPrefix, !name.hasPrefix(prefix) {
+        if let prefix = nameFilterPrefix, !name.lowercased().hasPrefix(prefix.lowercased()) {
             filteredCount += 1
             return
         }

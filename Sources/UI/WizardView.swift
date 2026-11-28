@@ -82,7 +82,7 @@ struct WizardView: View {
         // 只保留自己那个：它走「退出向导？」确认，不会静默丢掉未完成状态。
         .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .navigationBarLeading) {
                 Button {
                     showExitConfirm = true
                 } label: {
@@ -101,7 +101,7 @@ struct WizardView: View {
             Text("中途退出可能导致泵停留在未完成状态。若已配对但尚未切到运行中，建议先走完。")
         }
         // 进入扫描步就重扫：清掉上次残留的选择，从零开始找泵。
-        .onChange(of: index) { _, new in
+        .onChange(of: index) { new in
             guard steps.indices.contains(new) else { return }
             if steps[new] == .scanPick, !model.busy {
                 model.restartPairScan()
@@ -110,7 +110,7 @@ struct WizardView: View {
             // （AAPS 配对末尾同样是无条件切运行），缓存不可信也没关系。
         }
         // 配对是异步的（4 条命令、通常十几秒）。成功才允许进入排气。
-        .onChange(of: model.pairingState) { _, new in
+        .onChange(of: model.pairingState) { new in
             if new == .paired, current == .password {
                 index += 1
             }

@@ -142,6 +142,8 @@ final class EquilControllerModel: ObservableObject {
     @Published var batteryPercent: Int?
     /// 基础率（U/h）。AAPS 显示 3 位小数。
     @Published var baseBasalRate: Double?
+    /// 最近一次写入/读到的 24 个整点基础率（U/h），供设置页回显。
+    @Published var basalSchedule: [Double]?
     /// 起始储药量（U）。-1 / nil 表示未知，此时算不出总输注量。
     @Published var startInsulin: Int?
     /// 最近一次大剂量。
@@ -1954,6 +1956,45 @@ final class EquilControllerModel: ObservableObject {
             case .failure(let msg):
                 self.append("❌ 读取基础率失败：\(msg)")
                 self.statusLine = "基础率：失败 — \(msg)"
+            }
+            self.busy = false
+            self.ble.onConnected = nil
+        }
+    }
+
+    /// 写入基础率方案（CmdBasalSet）。hourlyRates 必须是 0 点起 24 个整点的 U/h。
+    /// 泵按 0.0125 U/h 步进取整，所以「设定值」与「实际」可能差一档，写入后建议读回。
+    func setBasal(hourlyRates: [Double]) {
+        guard !busy else { return }
+        guard isPaired else {
+            append("⚠️ 请先配对（未保存设备/密码）")
+            return
+        }
+        guard hourlyRates.count == 24 else {
+            append("⚠️ 基础率必须是 24 个整点值（当前 \(hourlyRates.count) 个）")
+            return
+        }
+        busy = true
+        statusLine = "写入基础率…"
+        append("=== 写入基础率（CmdBasalSet）===")
+        let cmd = CmdBasalSet(hourlyRates: hourlyRates,
+                              equilDevice: pairedDevice,
+                              equilPassword: pairedPassword,
+                              createTime: Int64(Date().timeIntervalSince1970 * 1000))
+        runCommandPerConnection(cmd, kind: "写入基础率") { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .success:
+                let delivered = (0..<24).map { CmdBasalSet.deliveredRate(hourlyRates[$0]) }
+                self.basalSchedule = delivered
+                self.baseBasalRate = delivered.first
+                self.append("📈 已写入基础率（0 时起前 6 小时）：\(delivered.prefix(6).map { String(format: "%.4f", $0) }.joined(separator: " / ")) U/h")
+                self.append("⚠️ 泵按 0.0125 U/h 步进取整，设定 \(String(format: "%.3f", hourlyRates[0])) U/h 实际为 \(String(format: "%.4f", delivered[0])) U/h；建议点「读回」核对")
+                self.statusLine = "基础率 \(String(format: "%.4f", delivered[0])) U/h"
+                self.lastDataTime = Date()
+            case .failure(let msg):
+                self.append("❌ 写入基础率失败：\(msg)")
+                self.statusLine = "基础率：写入失败 — \(msg)"
             }
             self.busy = false
             self.ble.onConnected = nil

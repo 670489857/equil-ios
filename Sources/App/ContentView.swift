@@ -19,18 +19,25 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack {
-            OverviewView(model: model)
-                .navigationTitle("Equil 泵")
-                .navigationBarTitleDisplayMode(.inline)
-                .navigationDestination(isPresented: routeBinding) {
+        NavigationView {
+            ZStack {
+                OverviewView(model: model)
+                    .navigationTitle("Equil 泵")
+                    .navigationBarTitleDisplayMode(.inline)
+                // iOS 15 没有 navigationDestination：用隐藏的 NavigationLink 承载同一套 route。
+                NavigationLink(isActive: routeBinding) {
                     destination
+                } label: {
+                    EmptyView()
                 }
+                .hidden()
+            }
         }
+        .navigationViewStyle(.stack)
         // 打开 App 就自己连泵：不用点「运行」。
         // 启动走一次，从后台回来再走一次（模型内部 30 秒节流，重复调用无害）。
         .onAppear { model.autoConnectOnLaunch() }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             if phase == .active { model.autoConnectOnLaunch() }
         }
         // 大剂量输入页已撤掉入口：1.32 起大剂量在设置页第一栏内联输入，
@@ -39,10 +46,10 @@ struct ContentView: View {
         .sheet(isPresented: $model.showScanner, onDismiss: {
             if model.scanning { model.stopScan() }
         }) {
-            NavigationStack {
+            NavigationView {
                 ScannerView(model: model)
                     .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
+                        ToolbarItem(placement: .navigationBarLeading) {
                             Button("关闭") { model.showScanner = false }
                         }
                     }

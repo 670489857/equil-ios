@@ -82,7 +82,7 @@ struct ScannerView: View {
         .navigationTitle("扫描设备")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button(model.scanning ? "停止" : "扫描") {
                     model.scanning ? model.stopScan() : model.startScan()
                 }
@@ -213,7 +213,7 @@ struct BolusSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             VStack(spacing: 20) {
                 VStack(spacing: 6) {
                     Text("大剂量 · 步长 \(stepText) U")
@@ -300,7 +300,7 @@ struct BolusSheet: View {
             .navigationTitle("输注")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("取消") { dismiss() }
                 }
             }

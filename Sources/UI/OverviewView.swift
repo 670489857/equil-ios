@@ -35,12 +35,6 @@ struct OverviewView: View {
 
                 hintText
 
-                Text(AppVersion.text)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 2)
-                    .accessibilityLabel("版本 \(AppVersion.text)")
             }
             .padding(.horizontal, 14)
             .padding(.top, 4)

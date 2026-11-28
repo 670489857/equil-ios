@@ -37,12 +37,7 @@ struct SettingsView: View {
     @State private var tempRate: String = "0.5"
     @State private var tempDuration: String = "30"
 
-    @State private var basalConstant: String = "0.5"
-    @State private var basalTable: String = ""
-    @State private var basalUseTable = false
-    @State private var showBasalConfirm = false
-    @State private var basalError: String?
-    @State private var pendingBasal: [Double] = []
+    @State private var showBasalSheet = false
 
     @State private var extUnits: String = "1"
     @State private var extMinutes: String = "60"
@@ -63,16 +58,45 @@ struct SettingsView: View {
                     maxBolusCard
                     bolusRateCard
                     maxBasalCard
-                    basalScheduleCard
                     lowReservoirCard
 
                     safetyCard
+
+                    // 版式保持与原项目一致：新增能力只放在最底部的小字入口里。
+                    HStack(spacing: 16) {
+                        Button {
+                            showBasalSheet = true
+                        } label: {
+                            Text("基础率方案").font(.system(size: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+
+                        Text(AppVersion.text)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 32)
             }
             .background(AapsUI.background)
+            .sheet(isPresented: $showBasalSheet) {
+                NavigationView {
+                    BasalScheduleSheet(model: model)
+                        .navigationTitle("基础率方案")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("关闭") { showBasalSheet = false }
+                            }
+                        }
+                }
+                .navigationViewStyle(.stack)
+            }
             .navigationTitle("参数设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -343,80 +367,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - 基础率方案（CmdBasalSet）
-
-    /// 泵接受 24 个整点的基础率，每半小时按 0.00625 U 步进取整。
-    /// 设定 1.000 U/h 泵实际给 0.9875 或 1.000 取决于取整，所以写后必须读回。
-    private var basalScheduleCard: some View {
-        AapsCard {
-            VStack(alignment: .leading, spacing: 12) {
-                CardTitle(title: "基础率方案", caption: "写入 24 个小时段（CmdBasalSet）")
-                if basalUseTable {
-                    FieldShell {
-                        TextField("0.5, 0.5, 0.8, 1.0, …（24 个，逗号或空格分隔）", text: $basalTable)
-                    }
-                } else {
-                    HStack(spacing: 10) {
-                        FieldShell {
-                            TextField("0.5", text: $basalConstant)
-                                .keyboardType(.decimalPad)
-                        }
-                        Text("U/h 全天一致").font(.system(size: 14)).foregroundStyle(.secondary)
-                    }
-                }
-                HStack(spacing: 10) {
-                    pumpButton("写入") {
-                        let values = basalUseTable ? Self.parseBasalTable(basalTable)
-                                                  : Array(repeating: Double(basalConstant) ?? -1, count: 24)
-                        guard values.count == 24, values.allSatisfy({ $0 >= 0 && $0 <= 15 }) else {
-                            basalError = "基础率要 24 个 0–15 U/h 的数（当前解析到 \(values.count) 个）"
-                            return
-                        }
-                        basalError = nil
-                        pendingBasal = values
-                        showBasalConfirm = true
-                    }
-                    pumpButton("读回") { model.queryBasal() }
-                    pumpButton(basalUseTable ? "用单值" : "用表格") { basalUseTable.toggle() }
-                }
-                if let schedule = model.basalSchedule, let first = schedule.first {
-                    let allSame = schedule.allSatisfy { abs($0 - first) < 0.00001 }
-                    Text(allSame
-                         ? String(format: "泵内：恒定 %.4f U/h", first)
-                         : "泵内：0–6 时 " + schedule.prefix(6).map { String(format: "%.3f", $0) }.joined(separator: " / ") + " U/h")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("泵内：未知（点「读回」）")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                if let err = basalError {
-                    Text(err).font(.system(size: 12)).foregroundStyle(.orange)
-                }
-                Text("写入会整表覆盖泵内 48 个半小时槽；泵按 0.0125 U/h 取整，写后请读回核对。")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .alert("确认写入基础率？", isPresented: $showBasalConfirm) {
-            Button("取消", role: .cancel) { pendingBasal = [] }
-            Button("写入", role: .destructive) {
-                let values = pendingBasal
-                pendingBasal = []
-                model.setBasal(hourlyRates: values)
-            }
-        } message: {
-            Text(String(format: "0 时起 %.3f U/h × 24 段，会覆盖泵内现有方案。", pendingBasal.first ?? 0))
-        }
-    }
-
-    /// 接受「0.5, 0.6 1.2」这类写法；不足 24 个返回原样由调用方报错。
-    static func parseBasalTable(_ text: String) -> [Double] {
-        let parts = text.split(whereSeparator: { ",，;； \n\t".contains($0) })
-        return parts.compactMap { Double($0) }
-    }
-
     // MARK: - 临时基础率 / 运行模式
 
     private var tempBasalCard: some View {
@@ -672,5 +622,116 @@ struct LogView: View {
                 Button("清空", role: .destructive) { model.clearLog() }
             }
         }
+    }
+}
+
+// MARK: - 基础率方案（CmdBasalSet）独立页
+// 版式沿用 AapsCard / CardTitle / FieldShell / pumpButton，与设置页其余卡片一致；
+// 放在独立的 sheet 里，保证设置页主界面与原项目逐像素一致。
+
+struct BasalScheduleSheet: View {
+    @ObservedObject var model: EquilControllerModel
+    @State private var constant: String = "0.5"
+    @State private var table: String = ""
+    @State private var useTable = false
+    @State private var showConfirm = false
+    @State private var pending: [Double] = []
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                AapsCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        CardTitle(title: "基础率方案", caption: "24 个整点 × 4 字节（CmdBasalSet）")
+                        if useTable {
+                            FieldShell {
+                                TextField("0.5, 0.5, 0.8, 1.0, …（24 个，逗号或空格分隔）", text: $table)
+                            }
+                        } else {
+                            HStack(spacing: 10) {
+                                FieldShell {
+                                    TextField("0.5", text: $constant)
+                                        .keyboardType(.decimalPad)
+                                }
+                                Text("U/h 全天一致").font(.system(size: 14)).foregroundStyle(.secondary)
+                            }
+                        }
+                        HStack(spacing: 10) {
+                            pumpButton("写入") {
+                                let values = useTable ? Self.parse(table)
+                                                      : Array(repeating: Double(constant) ?? -1, count: 24)
+                                guard values.count == 24, values.allSatisfy({ $0 >= 0 && $0 <= 15 }) else {
+                                    error = "基础率要 24 个 0–15 U/h 的数（当前解析到 \(values.count) 个）"
+                                    return
+                                }
+                                error = nil
+                                pending = values
+                                showConfirm = true
+                            }
+                            pumpButton("读回") { model.queryBasal() }
+                            pumpButton(useTable ? "用单值" : "用表格") { useTable.toggle() }
+                        }
+                        if let schedule = model.basalSchedule, let first = schedule.first {
+                            let allSame = schedule.allSatisfy { abs($0 - first) < 0.00001 }
+                            Text(allSame
+                                 ? String(format: "泵内：恒定 %.4f U/h", first)
+                                 : "泵内：0–6 时 " + schedule.prefix(6).map { String(format: "%.3f", $0) }.joined(separator: " / ") + " U/h")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("泵内：未知（点「读回」）")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let error {
+                            Text(error).font(.system(size: 12)).foregroundStyle(.orange)
+                        }
+                        Text("写入会整表覆盖泵内 48 个半小时槽；泵按 0.0125 U/h 取整，写后请读回核对。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(AppVersion.text)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 32)
+        }
+        .background(AapsUI.background)
+        .alert("确认写入基础率？", isPresented: $showConfirm) {
+            Button("取消", role: .cancel) { pending = [] }
+            Button("写入", role: .destructive) {
+                let values = pending
+                pending = []
+                model.setBasal(hourlyRates: values)
+            }
+        } message: {
+            Text(String(format: "0 时起 %.3f U/h × 24 段，会覆盖泵内现有方案。", pending.first ?? 0))
+        }
+    }
+
+    static func parse(_ text: String) -> [Double] {
+        let parts = text.split(whereSeparator: { ",，;； \n\t".contains($0) })
+        return parts.compactMap { Double($0) }
+    }
+
+    /// 与设置页 smallButton 完全同一外观（同字号/高度/底色/圆角），只是搬到了这个页面。
+    private func pumpButton(_ title: String, action: @escaping () -> Void) -> some View {
+        let on = model.isPaired && !model.busy
+        return Button(action: action) {
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(AapsUI.accent)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(AapsUI.accent.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!on)
+        .opacity(on ? 1 : 0.45)
     }
 }

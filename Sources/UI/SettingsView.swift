@@ -41,6 +41,7 @@ struct SettingsView: View {
     @State private var basalTable: String = ""
     @State private var basalUseTable = false
     @State private var showBasalConfirm = false
+    @State private var basalError: String?
     @State private var pendingBasal: [Double] = []
 
     @State private var extUnits: String = "1"
@@ -368,9 +369,10 @@ struct SettingsView: View {
                         let values = basalUseTable ? Self.parseBasalTable(basalTable)
                                                   : Array(repeating: Double(basalConstant) ?? -1, count: 24)
                         guard values.count == 24, values.allSatisfy({ $0 >= 0 && $0 <= 15 }) else {
-                            model.append("⚠️ 基础率要 24 个 0–15 U/h 的数（当前解析到 \(values.count) 个）")
+                            basalError = "基础率要 24 个 0–15 U/h 的数（当前解析到 \(values.count) 个）"
                             return
                         }
+                        basalError = nil
                         pendingBasal = values
                         showBasalConfirm = true
                     }
@@ -388,6 +390,9 @@ struct SettingsView: View {
                     Text("泵内：未知（点「读回」）")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                }
+                if let err = basalError {
+                    Text(err).font(.system(size: 12)).foregroundStyle(.orange)
                 }
                 Text("写入会整表覆盖泵内 48 个半小时槽；泵按 0.0125 U/h 取整，写后请读回核对。")
                     .font(.system(size: 11))

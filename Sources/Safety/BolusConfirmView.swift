@@ -124,7 +124,6 @@ struct BolusConfirmView: View {
             .padding(.bottom, 8)
         }
         .padding(.horizontal, 20)
-        .presentationDragIndicator(.hidden)
         .interactiveDismissDisabled(pressing)
     }
 

@@ -305,7 +305,7 @@ private struct VectorPump: View {
                 Text("EQUIL")
                     .font(.system(size: 6, weight: .bold))
                     .foregroundStyle(.tertiary)
-                    .tracking(1.5)
+                    .kerning(1.5)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)

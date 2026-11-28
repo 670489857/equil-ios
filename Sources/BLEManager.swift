@@ -367,7 +367,7 @@ extension BLEManager: CBPeripheralDelegate {
                 log("状态 电量\(h.battery) 药量\(h.reservoir) 基础\(h.basalRateUnitsPerHour) 事件[\(h.eventText)]")
             }
         case (4, 21):
-            occlusionText = payload.count >= 4 ? "\(Int(EquilByte.readI32(payload, 0))" : "无数据"
+            occlusionText = payload.count >= 4 ? "\(Int(EquilByte.readI32(payload, 0)))" : "无数据"
             log("阻塞检测 \(occlusionText)")
         default:
             break

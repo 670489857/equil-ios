@@ -1609,6 +1609,8 @@ final class EquilControllerModel: ObservableObject {
     private var pendingHistoryIndices: [Int] = []
     private var collectedHistory: [PumpHistoryRecord] = []
     private var historyStepFailures = 0
+    /// true = 本次是「加载更早」，读完要和已有列表合并，而不是替换。
+    private var historyAppendMode = false
 
     /// 从泵内历史库读最近 `count` 条。
     ///
@@ -1631,6 +1633,7 @@ final class EquilControllerModel: ObservableObject {
         collectedHistory = []
         pendingHistoryIndices = []
         historyStepFailures = 0
+        historyAppendMode = false
         pumpHistoryMessage = "读取最新记录序号…"
         append("=== 读取泵端历史（最多 \(count) 条）===")
 
@@ -1724,7 +1727,15 @@ final class EquilControllerModel: ObservableObject {
     }
 
     private func finishPumpHistory(error: String?) {
-        pumpHistory = collectedHistory.sorted { $0.index > $1.index }
+        let incoming = collectedHistory.sorted { $0.index > $1.index }
+        if historyAppendMode {
+            // 续读：去掉可能重叠的序号，再按序号降序合并
+            let existing = pumpHistory.filter { rec in !incoming.contains { $0.index == rec.index } }
+            pumpHistory = (existing + incoming).sorted { $0.index > $1.index }
+            historyAppendMode = false
+        } else {
+            pumpHistory = incoming
+        }
         pumpHistoryReading = false
         releaseBusy()
         ble.onConnected = nil
@@ -1735,6 +1746,37 @@ final class EquilControllerModel: ObservableObject {
             pumpHistoryMessage = "共 \(pumpHistory.count) 条"
             append("✅ 泵端历史读取完成：\(pumpHistory.count) 条（最新序号 \(pumpHistoryNewestIndex)）")
         }
+    }
+
+    /// 继续往前读 `count` 条更早的记录（泵的环形历史库按绝对序号寻址，
+    /// 所以只要知道当前最小序号，就能一路往回读到 1）。
+    func loadOlderPumpHistory(count: Int = 20) {
+        guard isPaired else {
+            pumpHistoryMessage = "未配对"
+            return
+        }
+        guard !busy, !pumpHistoryReading else { return }
+        guard let oldest = pumpHistory.last?.index, oldest > 1 else {
+            pumpHistoryMessage = pumpHistory.isEmpty ? "还没有读取历史" : "已经到最早一条（#\(pumpHistory.last?.index ?? 0)）"
+            return
+        }
+        let upper = oldest - 1
+        let lower = max(1, upper - count + 1)
+        busy = true
+        pumpHistoryReading = true
+        historyAppendMode = true
+        collectedHistory = []
+        historyStepFailures = 0
+        pendingHistoryIndices = Array(lower...upper)
+        pumpHistoryMessage = "0/\(pendingHistoryIndices.count)"
+        append("=== 续读更早的泵端历史 \(lower)…#\(upper) ===")
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000_000)
+            guard let self, self.pumpHistoryReading else { return }
+            self.finishPumpHistory(error: "读取超时（120 秒）— 本轮读到 \(self.collectedHistory.count) 条")
+        }
+        readNextPumpHistoryRecord()
     }
 
     /// 刷新：运行模式 → 电池/余量 → 临时基础率。
@@ -1831,6 +1873,9 @@ final class EquilControllerModel: ObservableObject {
         tempBasalSetAt = nil
         tempBasalPendingVerify = false
         stopTempBasalTicker()
+        pumpHistory = []
+        pumpHistoryMessage = ""
+        pumpHistoryNewestIndex = 0
         statusLine = "已解除本机配对"
         append("🔓 已清除本机配对信息（\(note)）")
         persistIdentity()   // 同步清掉 UserDefaults 里的 pairedDevice / pairedPassword
@@ -1918,17 +1963,57 @@ final class EquilControllerModel: ObservableObject {
 
     private func stopThenUnpair(retracted: Bool, completion: ((Bool) -> Void)?) {
         busy = true
-        statusLine = "解绑 2/2：停止输注…"
-        append("=== 解绑 2/2：STOP（CmdModelSet mode=2）===")
+        statusLine = "解绑 2/3：停止输注…"
+        append("=== 解绑 2/3：STOP（CmdModelSet mode=2）===")
         let cmd = CmdModelSet(mode: 2,
                               createTime: Int64(Date().timeIntervalSince1970 * 1000),
                               equilDevice: pairedDevice, equilPassword: pairedPassword)
         runCommandPerConnection(cmd, kind: "解绑停止") { [weak self] outcome in
             guard let self else { return }
             self.handle(outcome, kind: "解绑停止")
-            let note = retracted ? "推杆已退回底部，泵已 STOP，清除本机配对"
-                                  : "泵未响应，只清除了本机配对（推杆未退回）"
-            self.unpairLocal(note: note)
+            // 第三步才是真正让泵解除绑定（CmdUnPair）。前两步失败也照发：
+            // 泵不应答应「已解绑」而实际还绑着，那会让它再也配不上新手机。
+            self.sendUnpairThenLocal(retracted: retracted, completion: completion)
+        }
+    }
+
+    /// 解绑第 3 步：CmdUnPair（port 0E0E，SHA-256 派生密钥 + 两段 AES）。
+    ///
+    /// 这是**唯一**能让泵自己解除配对关系的命令。成功与否都清本机，
+    /// 但提示里必须说清楚泵那边到底解除没有 —— 两者对用户后续操作完全不同。
+    private func sendUnpairThenLocal(retracted: Bool, completion: ((Bool) -> Void)?) {
+        let pwd = pairPassword.trimmingCharacters(in: .whitespaces).uppercased()
+        guard !pwd.isEmpty else {
+            append("⚠️ 未保存配对密码（4 位）— 跳过泵端解绑，只清本机。下次配对请填密码，届时才能真正解绑")
+            unpairLocal(note: retracted ? "推杆已退回、泵已 STOP；未下发解绑，泵内仍保留配对"
+                                        : "泵未响应；未下发解绑，泵内仍保留配对")
+            releaseBusy()
+            completion?(retracted)
+            return
+        }
+        busy = true
+        statusLine = "解绑 3/3：通知泵解除配对…"
+        append("=== 解绑 3/3：CmdUnPair（port 0E0E）===")
+        let name = selectedDevice?.name ?? "Equil - \(serialNumber)"
+        let cmd = CmdUnPair(name: name,
+                            password: pwd,
+                            createTime: Int64(Date().timeIntervalSince1970 * 1000))
+        runCommandPerConnection(cmd, kind: "解绑配对", timeout: 30) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .success where cmd.cmdSuccess:
+                self.append("✅ 泵已确认解除配对（cmdSuccess）")
+                self.unpairLocal(note: retracted ? "推杆已退回、泵已 STOP 并解除配对"
+                                                : "泵已解除配对（推杆未退回）")
+            case .success:
+                self.append("⚠️ 泵未回确认帧 — 配对可能仍留在泵内，只清了本机")
+                self.unpairLocal(note: retracted ? "推杆已退回、泵已 STOP；解绑未获确认"
+                                                : "泵未确认解绑，只清了本机")
+            case .failure(let msg):
+                self.append("❌ 解绑命令失败：\(msg) — 泵内配对可能仍存在，已清本机")
+                self.unpairLocal(note: "解绑命令失败（\(msg)），只清了本机")
+            }
+            self.releaseBusy()
             completion?(retracted)
         }
     }

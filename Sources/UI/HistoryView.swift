@@ -131,6 +131,12 @@ struct HistoryView: View {
                 HStack {
                     Text("泵端历史")
                     Spacer()
+                    if !model.pumpHistory.isEmpty {
+                        Button("更早 20 条") { model.loadOlderPumpHistory() }
+                            .font(.caption)
+                            .disabled(model.pumpHistoryReading || !model.isPaired || model.busy
+                                      || (model.pumpHistory.last?.index ?? 1) <= 1)
+                    }
                     Button(model.pumpHistoryReading ? "读取中…" : "读取") {
                         model.readPumpHistory()
                     }
@@ -138,7 +144,7 @@ struct HistoryView: View {
                     .disabled(model.pumpHistoryReading || !model.isPaired || model.busy)
                 }
             } footer: {
-                Text("泵内事件库，逐条读取，每条一次命令往返；最多 20 条，换手机也还在。")
+                Text("泵内事件库，按绝对序号寻址，每条一次命令往返。一次读最近 20 条；点「更早 20 条」往回翻，直到序号 1。换手机也还在。")
             }
 
             Section {

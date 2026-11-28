@@ -235,7 +235,7 @@ struct WizardView: View {
 
         case .unpairWarn:
             VStack(alignment: .leading, spacing: 12) {
-                Callout(text: "解绑会停止输注，并把推杆退回到底、清除本机配对。退回前请确认泵已从身上取下。", level: .critical)
+                Callout(text: "解绑会停止输注、把推杆退回到底，并通知泵解除配对关系。退回前请确认泵已从身上取下。", level: .critical)
             }
 
         case .unpairConfirm:
@@ -245,14 +245,14 @@ struct WizardView: View {
                 InfoRow(label: "设备",
                         value: model.selectedDevice?.name
                             ?? (model.pairedDevice.isEmpty ? "—" : String(model.pairedDevice.prefix(16)) + "…"))
-                InfoRow(label: "将执行", value: "推杆退回 → 清除配对")
+                InfoRow(label: "将执行", value: "推杆退回 → STOP → 泵端解绑")
                 if model.busy {
                     HStack(spacing: 8) {
                         ProgressView()
                         Text(model.statusLine).font(.footnote).foregroundStyle(.secondary)
                     }
                 }
-                Callout(text: "泵不在附近时两条命令都会等 30 秒超时，之后仍会清除本机配对（推杆不会退回）。",
+                Callout(text: "三步都要连上泵：推杆退回 → STOP → CmdUnPair。泵不在附近时每步都会等超时，超时后仍会清除本机配对（泵里可能还绑着）。解绑时用的 4 位密码就是配对时填的那个，没存下来就只能退化成只清本机。",
                         level: .warning)
             }
         }

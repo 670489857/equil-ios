@@ -1,32 +1,40 @@
-name: EquilProbe
+name: EquilController
 options:
   bundleIdPrefix: app.equil
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "17.0"
   createIntermediateGroups: true
+settings:
+  base:
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    MARKETING_VERSION: "3.1.0"
+    CURRENT_PROJECT_VERSION: "1"
 targets:
-  EquilProbe:
+  EquilController:
     type: application
     platform: iOS
     sources:
-      - Sources
+      - path: Sources
     info:
-      path: Sources/Info.plist
+      path: Info.plist
       properties:
         CFBundleDisplayName: 科研泵3.1
-        CFBundleShortVersionString: "3.1.0"
-        CFBundleVersion: "6"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        NSBluetoothAlwaysUsageDescription: "用于连接并控制 Equil 贴敷式胰岛素泵。"
+        NSBluetoothPeripheralUsageDescription: "用于连接并控制 Equil 贴敷式胰岛素泵。"
+        NSLocalNetworkUsageDescription: "内置日志服务器，供开发者在局域网内读取运行日志。"
+        NSBonjourServices:
+          - "_http._tcp"
         UIBackgroundModes:
           - bluetooth-central
-        NSBluetoothAlwaysUsageDescription: 连接微泰 Equil 贴泵需要蓝牙权限，用于读取贴泵广播与状态帧。
-        NSBluetoothPeripheralUsageDescription: 连接微泰 Equil 贴泵需要蓝牙权限。
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.equil.probe
-        SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGNING_REQUIRED: NO
+        GENERATE_INFOPLIST_FILE: NO

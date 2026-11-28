@@ -21,22 +21,20 @@ jobs:
         run: |
           BUILD=$(git rev-list --count HEAD)
           [ -z "$BUILD" ] && BUILD=${{ github.run_number }}
-          VERSION="${BASE_VERSION}.${BUILD}"
           echo "BUILD=$BUILD" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "build=$BUILD version=$VERSION"
+          echo "VERSION=${BASE_VERSION}.${BUILD}" >> $GITHUB_OUTPUT
+          echo "build=$BUILD version=${BASE_VERSION}.${BUILD}"
 
-      - name: Inject version into project.yml
+      - name: Inject version
         run: |
           python3 - "${{ steps.ver.outputs.VERSION }}" "${{ steps.ver.outputs.BUILD }}" <<'PY'
           import re, sys
           version, build = sys.argv[1], sys.argv[2]
-          p = 'project.yml'
-          s = open(p).read()
-          s = re.sub(r'CFBundleShortVersionString: ".*"', f'CFBundleShortVersionString: "{version}"', s)
-          s = re.sub(r'CFBundleVersion: ".*"', f'CFBundleVersion: "{build}"', s)
-          open(p, 'w').write(s)
-          print([l for l in s.splitlines() if 'CFBundle' in l])
+          s = open('project.yml').read()
+          s = re.sub(r'MARKETING_VERSION: ".*"', f'MARKETING_VERSION: "{version}"', s)
+          s = re.sub(r'CURRENT_PROJECT_VERSION: ".*"', f'CURRENT_PROJECT_VERSION: "{build}"', s)
+          open('project.yml', 'w').write(s)
+          print([l.strip() for l in s.splitlines() if 'VERSION' in l])
           PY
 
       - name: Install XcodeGen
@@ -48,8 +46,8 @@ jobs:
       - name: Build (unsigned)
         run: |
           xcodebuild \
-            -project EquilProbe.xcodeproj \
-            -target EquilProbe \
+            -project EquilController.xcodeproj \
+            -target EquilController \
             -configuration Release \
             -sdk iphoneos \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
@@ -58,12 +56,12 @@ jobs:
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload
-          cp -R build/Release-iphoneos/EquilProbe.app Payload/
+          cp -R build/Release-iphoneos/EquilController.app Payload/
           IPA="${APP_NAME}-v${{ steps.ver.outputs.VERSION }}-未签名.ipa"
           zip -qry "$IPA" Payload
           echo "IPA_NAME=$IPA" >> $GITHUB_ENV
           ls -lh "$IPA"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" Payload/EquilProbe.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" Payload/EquilController.app/Info.plist
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4

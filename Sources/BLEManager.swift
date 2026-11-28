@@ -31,6 +31,13 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var pumpServiceFound = false
     @Published var writableReady = false
     @Published var pumpMode: Int? = nil
+    @Published var deviceInfo: EquilDeviceInfo? = nil
+    @Published var history: EquilHistory? = nil
+    @Published var setting: EquilSetting? = nil
+    @Published var basalUnits: [Double] = []
+    @Published var tempText: String = ""
+    @Published var bolusText: String = ""
+    @Published var occlusionText: String = ""
     @Published var txCount = 0
     @Published var rxCount = 0
 
@@ -301,6 +308,72 @@ extension BLEManager: CBPeripheralDelegate {
         }
     }
 
+    private func handleBody(_ body: [UInt8]) {
+        guard body.count >= 10 else { return }
+        let port = body[2]
+        let param = UInt16(body[5]) | (UInt16(body[6]) << 8)
+        let payload = Array(body[8..<(body.count - 2)])
+        bindAddress = body[1]
+
+        switch (port, param) {
+        case (0, 0):
+            if let info = EquilDeviceInfo.parse(payload) {
+                deviceInfo = info
+                log("设备信息 \(info.description)")
+            }
+        case (4, 0):
+            if payload.count >= 4 {
+                let v = Int(EquilByte.readI32(payload, 0))
+                if v >= 0 && v <= 2 { pumpMode = v; log("模式 \(v)") }
+            }
+        case (4, 2):
+            if payload.count >= 96 {
+                var units: [Double] = []
+                for i in 0..<48 {
+                    let raw = EquilByte.readU16(payload, i * 2)
+                    units.append(Double(raw * 25 * 2 / 4) / 1000)
+                }
+                basalUnits = units
+                log("基础率 48 槽，首槽 \(String(format: "%.3f", units.first ?? 0)) U/h")
+            }
+        case (4, 3):
+            if payload.count >= 16 {
+                let a0 = Int(EquilByte.readI32(payload, 0)) * 25 / 4
+                let i0 = Int(EquilByte.readI32(payload, 4))
+                let a1 = Int(EquilByte.readI32(payload, 8)) * 25 / 4
+                let i1 = Int(EquilByte.readI32(payload, 12))
+                bolusText = "快速 \(a0)mU/\(i0)s · 追加 \(a1)mU/\(i1)s"
+                log("大剂量 \(bolusText)")
+            }
+        case (4, 4):
+            if payload.count >= 8 {
+                let a = EquilByte.readI32(payload, 0)
+                let i = Int(EquilByte.readI32(payload, 4))
+                if a < 0 {
+                    tempText = "百分比 \(Int(Int32(bitPattern: UInt32(bitPattern: a) ^ 0x80000000)))% · \(i)s"
+                } else {
+                    tempText = "绝对 \(Int(a) * 25 / 4 / 1000) U · \(i)s"
+                }
+                log("临时率 \(tempText)")
+            }
+        case (4, 5):
+            if let s = EquilSetting.parse(payload) {
+                setting = s
+                log("设置 \(s.description)")
+            }
+        case (5, 1):
+            if let h = EquilHistory.parse(payload) {
+                history = h
+                log("状态 电量\(h.battery) 药量\(h.reservoir) 基础\(h.basalRateUnitsPerHour) 事件[\(h.eventText)]")
+            }
+        case (4, 21):
+            occlusionText = payload.count >= 4 ? "\(Int(EquilByte.readI32(payload, 0))" : "无数据"
+            log("阻塞检测 \(occlusionText)")
+        default:
+            break
+        }
+    }
+
     func peripheral(_ peripheral: CBPeripheral,
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
@@ -316,11 +389,7 @@ extension BLEManager: CBPeripheralDelegate {
         let bodies = EquilProtocol.shared.codec.extractFrames(from: &rxBuffer)
         for body in bodies {
             log("帧解析 → \(EquilProtocol.shared.describe(body))")
-            if body.count >= 12, body[2] == 4, body[3] == 4,
-               (UInt16(body[5]) | UInt16(body[6]) << 8) == 0 {
-                let value = Int(body[8]) | Int(body[9]) << 8 | Int(body[10]) << 16 | Int(body[11]) << 24
-                if value >= 0 && value <= 2 { pumpMode = value }
-            }
+            handleBody(body)
         }
     }
 }

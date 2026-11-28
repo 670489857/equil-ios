@@ -42,6 +42,10 @@ final class BLEManager: NSObject, ObservableObject {
     private var rxBuffer: [UInt8] = []
 
     var bindAddress: UInt8 = 0
+
+    // 只显示名称以 EQ 开头的设备（大小写不敏感）
+    @Published var onlyEqPrefix: Bool = (UserDefaults.standard.object(forKey: "only_eq") as? Bool) ?? true
+    @Published var filteredCount = 0
     @Published var autoReconnect = true
     private var manualDisconnect = false
     private var reconnectTask: DispatchWorkItem?
@@ -64,6 +68,7 @@ final class BLEManager: NSObject, ObservableObject {
         errorText = nil
         found.removeAll()
         devices = []
+        filteredCount = 0
         scanning = true
         central.scanForPeripherals(
             withServices: nil,
@@ -123,6 +128,17 @@ final class BLEManager: NSObject, ObservableObject {
         rxBuffer = []
     }
 
+    func setOnlyEqPrefix(_ value: Bool) {
+        onlyEqPrefix = value
+        UserDefaults.standard.set(value, forKey: "only_eq")
+        found = found.filter { value ? $0.value.name.lowercased().hasPrefix("eq") : true }
+        devices = found.values.sorted {
+            if $0.likelyPump != $1.likelyPump { return $0.likelyPump }
+            return $0.rssi > $1.rssi
+        }
+        log(value ? "只显示 EQ 开头的设备" : "显示全部设备")
+    }
+
     func clearError() { errorText = nil }
 
     // MARK: - 发送
@@ -174,6 +190,13 @@ extension BLEManager: CBCentralManagerDelegate {
             ?? "(无名称)"
         let uuids = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
         let likely = uuids.contains { BLEManager.serviceUUIDs.contains($0) }
+        if onlyEqPrefix && !name.lowercased().hasPrefix("eq") {
+            if found[peripheral.identifier] == nil {
+                filteredCount += 1
+                if filteredCount <= 5 { log("跳过 \(name)（非 EQ 开头）") }
+            }
+            return
+        }
         var item = Discovered(id: peripheral.identifier, peripheral: peripheral,
                              name: name, rssi: RSSI.intValue, likelyPump: likely)
         if let old = found[item.id], old.rssi >= item.rssi {

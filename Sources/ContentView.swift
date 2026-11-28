@@ -119,6 +119,11 @@ struct ContentView: View {
                 }
                 Toggle("断线自动重连（5 秒）", isOn: $ble.autoReconnect)
                     .font(.system(size: 12))
+                Toggle("只看 EQ 开头的设备", isOn: Binding(
+                    get: { ble.onlyEqPrefix },
+                    set: { ble.setOnlyEqPrefix($0) }
+                ))
+                .font(.system(size: 12))
 
                 ForEach(ble.devices) { item in
                     HStack {
@@ -134,7 +139,9 @@ struct ContentView: View {
                     }
                 }
                 if ble.devices.isEmpty {
-                    Text("没扫到设备：先确认贴泵已唤醒（贴泵上电/按键），且原手机 App 已断开。")
+                    Text(ble.onlyEqPrefix
+                         ? "没扫到 EQ 开头的设备（已过滤 \(ble.filteredCount) 个其他设备）。先确认贴泵已唤醒，且原手机 App 已断开；若贴泵名字不是 EQ 开头，可关掉上面的开关。"
+                         : "没扫到设备：先确认贴泵已唤醒（贴泵上电/按键），且原手机 App 已断开。")
                         .font(.system(size: 12)).foregroundColor(.gray)
                 }
                 if !ble.serviceNames.isEmpty {

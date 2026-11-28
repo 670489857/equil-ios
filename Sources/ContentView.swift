@@ -70,9 +70,9 @@ struct ContentView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Equil 独立版")
+                Text("科研泵 3.1")
                     .font(.system(size: 17, weight: .semibold))
-                Text("v0.2.1")
+                Text("v3.1")
                     .font(.system(size: 11))
                     .foregroundColor(.gray)
                 Spacer()

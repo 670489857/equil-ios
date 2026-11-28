@@ -31,12 +31,12 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Release-iphoneos/EquilProbe.app Payload/
-          zip -qry EquilProbe-unsigned.ipa Payload
-          ls -lh EquilProbe-unsigned.ipa
+          zip -qry 科研泵3.1-未签名.ipa Payload
+          ls -lh 科研泵3.1-未签名.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: EquilProbe-unsigned-ipa
-          path: EquilProbe-unsigned.ipa
+          name: research-pump-ipa
+          path: 科研泵3.1-未签名.ipa
           retention-days: 30
